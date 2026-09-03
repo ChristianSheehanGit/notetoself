@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlay, faStop, faReply } from '@fortawesome/free-solid-svg-icons';
+import { faPlay, faStop, faReply, faTrash } from '@fortawesome/free-solid-svg-icons';
 import { playNotes, noteOn, noteOff } from './audio';
 
 interface Note {
@@ -11,7 +11,7 @@ interface Note {
 
 const NUM_KEYS = 88;
 const FIRST_KEY = 21; // A0
-const NUM_COLUMNS = 64;
+const BASE_COLUMNS = 64;
 
 const isBlackKey = (pitch: number) => {
   const n = pitch % 12;
@@ -40,11 +40,13 @@ export default function PianoRoll() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playhead, setPlayhead] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const pianoRollRef = useRef<HTMLDivElement>(null);
   const playbackRef = useRef<{ stop: () => void } | null>(null);
   const heldPitchRef = useRef<number | null>(null);
   const [pressedKeys, setPressedKeys] = useState<Set<number>>(new Set());
   const [markerPosition, setMarkerPosition] = useState<number>(0);
   const [isDraggingMarker, setIsDraggingMarker] = useState(false);
+  const [numColumns, setNumColumns] = useState(BASE_COLUMNS);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -52,7 +54,7 @@ export default function PianoRoll() {
       // - key produces '-' normally, '_' with Shift
       // = key produces '=' normally, '+' with Shift
       if (e.key === '-') {
-        setCellWidth(prev => Math.max(20, prev - 2));
+        setCellWidth(prev => Math.max(12, prev - 2));
         e.preventDefault();
       } else if (e.key === '=') {
         setCellWidth(prev => Math.min(80, prev + 2));
@@ -76,6 +78,14 @@ export default function PianoRoll() {
     };
   }, []);
 
+  // Load the roll scrolled halfway down the keyboard so the middle octaves
+  // are visible on first render.
+  useEffect(() => {
+    if (!pianoRollRef.current) return;
+    pianoRollRef.current.scrollTop =
+      (pianoRollRef.current.scrollHeight - pianoRollRef.current.clientHeight) / 2;
+  }, []);
+
   useEffect(() => {
     if (!isDraggingMarker) return;
 
@@ -83,7 +93,7 @@ export default function PianoRoll() {
       if (!gridRef.current) return;
       const rect = gridRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + gridRef.current.scrollLeft;
-      const maxPos = NUM_COLUMNS * cellWidth;
+      const maxPos = numColumns * cellWidth;
       setMarkerPosition(Math.max(0, Math.min(maxPos, x)));
     };
 
@@ -98,7 +108,7 @@ export default function PianoRoll() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDraggingMarker, cellWidth]);
+  }, [isDraggingMarker, cellWidth, numColumns]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -149,6 +159,15 @@ export default function PianoRoll() {
     return { pitch, start: col };
   }, [cellWidth, cellHeight]);
 
+  // Expand the grid to cover the given column, padded to a 16-column beat
+  // boundary so it stays aligned with the column headers. Never shrinks.
+  const growToColumn = (col: number) => {
+    setNumColumns(prev => {
+      const needed = Math.max(BASE_COLUMNS, (Math.floor(col / 16) + 1) * 16);
+      return needed > prev ? needed : prev;
+    });
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 2) {
       setIsRightClicking(true);
@@ -164,6 +183,8 @@ export default function PianoRoll() {
     e.preventDefault();
     const pos = getGridPosition(e);
     if (!pos || pos.pitch < FIRST_KEY || pos.pitch >= FIRST_KEY + NUM_KEYS) return;
+
+    growToColumn(pos.start);
 
     heldPitchRef.current = pos.pitch;
     noteOn(pos.pitch);
@@ -205,6 +226,7 @@ export default function PianoRoll() {
       
       const newEnd = Math.max(resizingNote.start, pos.start);
       const newLength = Math.max(1, newEnd - resizingNote.start + 1);
+      growToColumn(newEnd);
       setLastNoteLength(newLength);
       setNotes(prev => prev.map(n => 
         n.pitch === resizingNote.pitch && n.start === resizingNote.start
@@ -221,6 +243,7 @@ export default function PianoRoll() {
       
       const newStart = Math.max(0, pos.start - movingNote.offsetX);
       const newPitch = Math.max(FIRST_KEY, Math.min(FIRST_KEY + NUM_KEYS - 1, pos.pitch));
+      growToColumn(newStart + movingNote.length);
       
       setLastNoteLength(movingNote.length);
       setNotes(prev => prev.map(n => 
@@ -254,7 +277,8 @@ export default function PianoRoll() {
     
     const pos = getGridPosition(e);
     if (!pos) return;
-    
+
+    growToColumn(pos.start);
     setCurrentDraw({ ...drawStart, end: pos.start });
   };
 
@@ -281,7 +305,8 @@ export default function PianoRoll() {
       
       // Remember the length of the note we just placed
       setLastNoteLength(length);
-      
+      growToColumn(end);
+
       setNotes(prev => {
         const filtered = prev.filter(n => !(n.pitch === drawStart.pitch && n.start >= start && n.start < start + length));
         return [...filtered, { pitch: drawStart.pitch, start, length }];
@@ -331,7 +356,7 @@ export default function PianoRoll() {
 
   const renderColumnHeader = () => {
     const labels: React.ReactElement[] = [];
-    const groups = NUM_COLUMNS / 16;
+    const groups = numColumns / 16;
     for (let i = 0; i < groups; i++) {
       labels.push(
         <div
@@ -351,7 +376,7 @@ export default function PianoRoll() {
     for (let row = NUM_KEYS - 1; row >= 0; row--) {
       const pitch = row + FIRST_KEY;
       const black = isBlackKey(pitch);
-      for (let col = 0; col < NUM_COLUMNS; col++) {
+      for (let col = 0; col < numColumns; col++) {
         const beatClass = col % 16 === 0 ? 'beat-16' : col % 4 === 0 ? 'beat-4' : '';
         cells.push(
           <div
@@ -417,8 +442,17 @@ export default function PianoRoll() {
           >
             <FontAwesomeIcon icon={faReply} />
           </button>
+          <button
+            className="control-btn"
+            onClick={() => setNotes([])}
+            title="Clear All"
+          >
+            <FontAwesomeIcon icon={faTrash} />
+          </button>
+          <span className="notes-count">Notes: {notes.length}</span>
         </div>
         <div className="setting">
+          <label>BPM</label>
           <input 
             type="number" 
             value={bpm} 
@@ -431,7 +465,7 @@ export default function PianoRoll() {
           <label>Grid Width:</label>
           <input 
             type="range" 
-            min="20" 
+            min="12" 
             max="80" 
             value={cellWidth}
             onChange={(e) => setCellWidth(Number(e.target.value))}
@@ -449,22 +483,15 @@ export default function PianoRoll() {
           />
           <span>{cellHeight}px</span>
         </div>
-                <span>Notes: {notes.length}</span>
-        <div className="footer-buttons">
-          <button onClick={togglePlay} disabled={notes.length === 0}>
-            {isPlaying ? 'Stop' : 'Play'}
-          </button>
-          <button onClick={() => setNotes([])}>Clear All</button>
-        </div>
       </div>
-      <div className="piano-roll">
+      <div className="piano-roll" ref={pianoRollRef}>
         <div className="piano-keys-sticky">
           {pianoKeys}
         </div>
         <div className="grid-wrap">
           <div
             className="column-header"
-            style={{ width: NUM_COLUMNS * cellWidth }}
+            style={{ width: numColumns * cellWidth }}
           >
             {renderColumnHeader()}
           </div>
@@ -477,9 +504,9 @@ export default function PianoRoll() {
             onMouseLeave={handleMouseUp}
             onContextMenu={handleContextMenu}
             style={{
-              width: NUM_COLUMNS * cellWidth,
+              width: numColumns * cellWidth,
               height: NUM_KEYS * cellHeight,
-              gridTemplateColumns: `repeat(64, ${cellWidth}px)`,
+              gridTemplateColumns: `repeat(${numColumns}, ${cellWidth}px)`,
               gridTemplateRows: `repeat(88, ${cellHeight}px)`,
               cursor: cursorStyle,
             }}

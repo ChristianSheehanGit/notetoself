@@ -44,22 +44,31 @@
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-right: 8px;
+  }
+
+  .notes-count {
+    color: #aaa;
+    font-size: 14px;
+    padding: 0 8px;
+    white-space: nowrap;
   }
 
   .control-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     background: #2a2a2a;
     border: 1px solid #444;
-    border-radius: 4px;
+    border-radius: 0;
     color: #fff;
     cursor: pointer;
     font-size: 14px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    line-height: 1;
 
     &:hover:not(:disabled) {
       background: #4a9eff;
@@ -86,6 +95,7 @@
     label {
       color: #aaa;
       font-size: 14px;
+      white-space: nowrap;
     }
 
     input[type="number"] {
@@ -94,6 +104,7 @@
       background: #222;
       color: #fff;
       border: 1px solid #444;
+      border-radius: 0;
       font-size: 14px;
 
       &:focus {
@@ -180,10 +191,22 @@
   }
 
   &.black {
-    background: #f5f5f5;
+    /* Black rectangle on the left, white rectangle on the right. The whole
+       element remains a full-height click target. */
+    background: linear-gradient(to right, #111 65%, #f5f5f5 65%);
     border-bottom: 1px solid #ddd;
-    margin-left: 60px;
-    width: 30px !important;
+  }
+
+  /* Only the black rectangle turns blue when pressed; the white half stays
+     white. */
+  &.black.pressed {
+    background: linear-gradient(to right, #4a9eff 65%, #f5f5f5 65%) !important;
+
+    .note-name {
+      /* The label sits on the white half, so keep it grey (not white). */
+      color: #9aa0a6;
+      opacity: 0.9;
+    }
   }
 
   &.pressed {
@@ -198,6 +221,7 @@
   .note-name {
     font-size: 14px;
     font-weight: 600;
+    color: #9aa0a6;
     opacity: 0.7;
     pointer-events: none;
   }
