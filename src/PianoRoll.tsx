@@ -7,9 +7,31 @@ interface Note {
   pitch: number;
   start: number;
   length: number;
+  track: number;
+  instrument: string;
+}
+
+interface Track {
+  id: number;
+  name: string;
+  color: string;
+  border: string;
+  instrument: string;
 }
 
 const NUM_KEYS = 88;
+
+const TRACKS: Track[] = [
+  { id: 0, name: 'Track 1', color: '#4a9eff', border: '#2c7dd0', instrument: 'acoustic_grand_piano' },
+  { id: 1, name: 'Track 2', color: '#34d399', border: '#0f9d6c', instrument: 'brass_section' },
+  { id: 2, name: 'Track 3', color: '#f472b6', border: '#d0468f', instrument: 'string_ensemble_1' },
+];
+
+const formatInstrumentName = (name: string) =>
+  name
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 const FIRST_KEY = 21; // A0
 const BASE_COLUMNS = 64;
 
@@ -29,6 +51,8 @@ export default function PianoRoll() {
   const [cellWidth, setCellWidth] = useState(40);
   const [cellHeight, setCellHeight] = useState(24);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [activeTrack, setActiveTrack] = useState<number>(0);
+  const activeTrackInfo = TRACKS.find(t => t.id === activeTrack) ?? TRACKS[0];
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ pitch: number; start: number } | null>(null);
   const [currentDraw, setCurrentDraw] = useState<{ pitch: number; start: number; end: number } | null>(null);
@@ -174,7 +198,7 @@ export default function PianoRoll() {
       const pos = getGridPosition(e);
       if (!pos) return;
       
-      const clickedNote = notes.find(n => n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
+      const clickedNote = notes.find(n => n.track === activeTrack && n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
       if (clickedNote) {
         setNotes(prev => prev.filter(n => n !== clickedNote));
       }
@@ -187,10 +211,10 @@ export default function PianoRoll() {
     growToColumn(pos.start);
 
     heldPitchRef.current = pos.pitch;
-    noteOn(pos.pitch);
+    noteOn(pos.pitch, activeTrackInfo.instrument);
 
-    // Check if clicking on existing note
-    const clickedNote = notes.find(n => n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
+    // Check if clicking on existing note on the active track
+    const clickedNote = notes.find(n => n.track === activeTrack && n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
     if (clickedNote) {
       // Check if clicking on the very last cell of the note to resize
       if (pos.start === clickedNote.start + clickedNote.length - 1) {
@@ -213,7 +237,7 @@ export default function PianoRoll() {
       const pos = getGridPosition(e);
       if (!pos) return;
       
-      const clickedNote = notes.find(n => n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
+      const clickedNote = notes.find(n => n.track === activeTrack && n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
       if (clickedNote) {
         setNotes(prev => prev.filter(n => n !== clickedNote));
       }
@@ -261,7 +285,7 @@ export default function PianoRoll() {
       // Update cursor based on what we're hovering over
       const pos = getGridPosition(e);
       if (pos) {
-        const hoveredNote = notes.find(n => n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
+        const hoveredNote = notes.find(n => n.track === activeTrack && n.pitch === pos.pitch && pos.start >= n.start && pos.start < n.start + n.length);
         if (hoveredNote) {
           if (pos.start === hoveredNote.start + hoveredNote.length - 1) {
             setCursorStyle('ew-resize');
@@ -308,8 +332,11 @@ export default function PianoRoll() {
       growToColumn(end);
 
       setNotes(prev => {
-        const filtered = prev.filter(n => !(n.pitch === drawStart.pitch && n.start >= start && n.start < start + length));
-        return [...filtered, { pitch: drawStart.pitch, start, length }];
+        const filtered = prev.filter(n =>
+          n.track !== activeTrack ||
+          !(n.pitch === drawStart.pitch && n.start >= start && n.start < start + length)
+        );
+        return [...filtered, { pitch: drawStart.pitch, start, length, track: activeTrack, instrument: activeTrackInfo.instrument }];
       });
     }
     setIsDrawing(false);
@@ -329,7 +356,7 @@ export default function PianoRoll() {
         style={{ height: cellHeight }}
         onMouseDown={(e) => {
           e.preventDefault();
-          noteOn(pitch);
+          noteOn(pitch, activeTrackInfo.instrument);
           setPressedKeys(prev => new Set(prev).add(pitch));
         }}
         onMouseUp={() => {
@@ -398,23 +425,31 @@ export default function PianoRoll() {
     const displayNotes = currentDraw && drawStart ? [...notes, {
       pitch: drawStart.pitch,
       start: Math.min(drawStart.start, currentDraw.end),
-      length: Math.abs(currentDraw.end - drawStart.start) + 1
+      length: Math.abs(currentDraw.end - drawStart.start) + 1,
+      track: activeTrack,
+      instrument: activeTrackInfo.instrument
     }] : notes;
 
     displayNotes.forEach((note, index) => {
       const row = NUM_KEYS - 1 - (note.pitch - FIRST_KEY);
       const isLong = note.length > 1;
+      const track = TRACKS.find(t => t.id === note.track) ?? TRACKS[0];
+      const isActive = note.track === activeTrack;
       
       noteElements.push(
         <div
           key={`note-${index}`}
-          className={`note-overlay ${isLong ? 'long-note' : 'filled'}`}
+          className={`note-overlay ${isLong ? 'long-note' : 'filled'} ${isActive ? '' : 'inactive'}`}
           style={{
             position: 'absolute',
             left: note.start * cellWidth,
             top: row * cellHeight,
             width: note.length * cellWidth,
             height: cellHeight,
+            background: track.color,
+            border: `2px solid ${track.border}`,
+            opacity: isActive ? 1 : 0.25,
+            pointerEvents: isActive ? 'auto' : 'none',
           }}
         />
       );
@@ -450,6 +485,22 @@ export default function PianoRoll() {
             <FontAwesomeIcon icon={faTrash} />
           </button>
           <span className="notes-count">Notes: {notes.length}</span>
+        </div>
+        <div className="setting track-select">
+          <label>Track</label>
+          <select
+            value={activeTrack}
+            onChange={(e) => setActiveTrack(Number(e.target.value))}
+            style={{
+              color: (TRACKS.find(t => t.id === activeTrack) ?? TRACKS[0]).color,
+            }}
+          >
+            {TRACKS.map(t => (
+              <option key={t.id} value={t.id}>
+                {formatInstrumentName(t.instrument)}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="setting">
           <label>BPM</label>

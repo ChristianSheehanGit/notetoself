@@ -1,20 +1,19 @@
 import { instrument, type Player } from 'soundfont-player';
 
-const INSTRUMENT = 'acoustic_grand_piano';
-
 /**
  * The sample-player loads and decodes per-note AudioBuffers into `buffers`,
  * keyed by MIDI note number (after note-name → midi mapping). We drive these
  * buffers directly with raw Web Audio nodes so that note-off reliably cuts
  * the sound short — independent of sample-player's envelope behavior.
  */
-interface PianoInstrument extends Player {
+interface SampledInstrument extends Player {
   buffers: Record<string, AudioBuffer>;
 }
 
 let audioContext: AudioContext | null = null;
-let piano: PianoInstrument | null = null;
-let loadingPromise: Promise<PianoInstrument> | null = null;
+
+/** Instrument loaders, keyed by instrument name, cached for page lifetime. */
+const instrumentCache = new Map<string, Promise<SampledInstrument>>();
 
 const getAudioContext = (): AudioContext => {
   if (!audioContext) {
@@ -24,21 +23,20 @@ const getAudioContext = (): AudioContext => {
 };
 
 /**
- * Lazily load the acoustic grand piano soundfont (MusyngKite rendering of
+ * Lazily load a soundfont instrument (by default the MusyngKite rendering of
  * Benjamin Gleitzman's MIDI.js soundfonts, served from gleitz.github.io).
- * The instrument is loaded once and cached for the lifetime of the page.
+ * Each instrument is loaded once and cached for the lifetime of the page.
  */
-const getPiano = (): Promise<PianoInstrument> => {
-  if (piano) return Promise.resolve(piano);
-  if (loadingPromise) return loadingPromise;
+const getInstrument = (name: string): Promise<SampledInstrument> => {
+  const cached = instrumentCache.get(name);
+  if (cached) return cached;
 
   const ctx = getAudioContext();
-  loadingPromise = instrument(ctx, INSTRUMENT).then((inst) => {
-    piano = inst as PianoInstrument;
-    return piano;
-  });
-
-  return loadingPromise;
+  // instrument() expects the fixed InstrumentName union; our names come from a
+  // validated list, so cast to satisfy the loader's type.
+  const promise = instrument(ctx, name as Parameters<typeof instrument>[1]).then((inst) => inst as SampledInstrument);
+  instrumentCache.set(name, promise);
+  return promise;
 };
 
 /**
@@ -51,6 +49,7 @@ export interface ScheduledNote {
   pitch: number;
   start: number; // column (16th note)
   length: number; // in columns
+  instrument: string; // soundfont instrument name for this note's track
 }
 
 interface PlaybackHandle {
@@ -114,18 +113,18 @@ const releaseVoice = (voice: ActiveVoice, now: number): void => {
 };
 
 /**
- * Start a piano note from the soundfont's decoded buffer. The sound rings
+ * Start a note from the given instrument's decoded buffer. The sound rings
  * out (sustains) until matching noteOff is called. Used when pressing down
  * on the grid or the piano keys. The AudioContext is created and resumed
  * within the user gesture call chain, satisfying autoplay policies.
  */
-export const noteOn = (pitch: number): void => {
+export const noteOn = (pitch: number, instrumentName: string): void => {
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') {
     void ctx.resume();
   }
   heldPitches.add(pitch);
-  void getPiano().then((inst) => {
+  void getInstrument(instrumentName).then((inst) => {
     if (!heldPitches.has(pitch)) return; // released before the instrument loaded
     const buffer = inst.buffers[String(pitch)];
     if (!buffer) return;
@@ -180,24 +179,43 @@ export const playNotes = (
 
   if (playableNotes.length > 0) {
     const cell = cellDuration(bpm);
-    void getPiano().then((inst) => {
-      if (stopped) return; // stopped before the instrument finished loading
-      for (const note of playableNotes) {
-        const buffer = inst.buffers[String(note.pitch)];
-        if (!buffer) continue;
-        const start = startTime + (note.start - startColumn) * cell;
-        const duration = note.length * cell;
-        const voice = connectVoice(buffer, start);
-        if (!voice) continue;
-        const end = start + duration;
-        // Hold at full gain for the note's sustain, then fade out to silence
-        // exactly at the note's end. Clamp the fade start so it never
-        // precedes the attack ramp (very short notes at high BPM).
-        const fadeStart = Math.max(start + 0.01, end - RELEASE_SECONDS);
-        voice.gain.gain.setValueAtTime(NOTE_GAIN, fadeStart);
-        voice.gain.gain.linearRampToValueAtTime(0, end);
-        voice.source.stop(end);
-        playbackVoices.push(voice);
+
+    // Group notes by instrument so each track's notes sound with their own
+    // instrument. Load the needed instruments, then schedule everything at
+    // note-on time (~0.1s lookahead) so all tracks start cleanly together.
+    const byInstrument = new Map<string, ScheduledNote[]>();
+    for (const note of playableNotes) {
+      const list = byInstrument.get(note.instrument) ?? [];
+      list.push(note);
+      byInstrument.set(note.instrument, list);
+    }
+
+    void Promise.all(
+      [...byInstrument.keys()].map(async (name) => ({
+        name,
+        inst: await getInstrument(name),
+      }))
+    ).then((loadedInstruments) => {
+      if (stopped) return; // stopped before the instruments finished loading
+      for (const { name, inst } of loadedInstruments) {
+        const group = byInstrument.get(name) ?? [];
+        for (const note of group) {
+          const buffer = inst.buffers[String(note.pitch)];
+          if (!buffer) continue;
+          const start = startTime + (note.start - startColumn) * cell;
+          const duration = note.length * cell;
+          const voice = connectVoice(buffer, start);
+          if (!voice) continue;
+          const end = start + duration;
+          // Hold at full gain for the note's sustain, then fade out to silence
+          // exactly at the note's end. Clamp the fade start so it never
+          // precedes the attack ramp (very short notes at high BPM).
+          const fadeStart = Math.max(start + 0.01, end - RELEASE_SECONDS);
+          voice.gain.gain.setValueAtTime(NOTE_GAIN, fadeStart);
+          voice.gain.gain.linearRampToValueAtTime(0, end);
+          voice.source.stop(end);
+          playbackVoices.push(voice);
+        }
       }
     });
   }
