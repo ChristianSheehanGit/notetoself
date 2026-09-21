@@ -15,6 +15,19 @@ let audioContext: AudioContext | null = null;
 /** Instrument loaders, keyed by instrument name, cached for page lifetime. */
 const instrumentCache = new Map<string, Promise<SampledInstrument>>();
 
+/**
+ * Instruments that the default MusyngKite set on the gleitz CDN doesn't host,
+ * mapped to an explicit soundfont URL. The General MIDI drum kit (one sample per
+ * drum, keyed by the standard drum note numbers 27-87) is only published in the
+ * FluidR3_GM set; Paul Rosen's fork of midi-js-soundfonts is the public mirror
+ * that carries it. Pinned to a commit so the asset can't change underneath us -
+ * upstream path is FluidR3_GM/percussion-mp3.js on the gh-pages branch.
+ */
+const INSTRUMENT_SOURCES: Record<string, string> = {
+  percussion:
+    'https://cdn.jsdelivr.net/gh/paulrosen/midi-js-soundfonts@cbd6b6f6d1af89ebfb69402860741288f08ff8b7/FluidR3_GM/percussion-mp3.js',
+};
+
 const getAudioContext = (): AudioContext => {
   if (!audioContext) {
     audioContext = new AudioContext();
@@ -32,9 +45,11 @@ const getInstrument = (name: string): Promise<SampledInstrument> => {
   if (cached) return cached;
 
   const ctx = getAudioContext();
-  // instrument() expects the fixed InstrumentName union; our names come from a
-  // validated list, so cast to satisfy the loader's type.
-  const promise = instrument(ctx, name as Parameters<typeof instrument>[1]).then((inst) => inst as SampledInstrument);
+  // Mapped instruments are addressed by their full soundfont URL; everything
+  // else by name. instrument() expects the fixed InstrumentName union, so cast
+  // to satisfy the loader's type: it accepts our names, and soundfont URLs too.
+  const source = INSTRUMENT_SOURCES[name] ?? name;
+  const promise = instrument(ctx, source as Parameters<typeof instrument>[1]).then((inst) => inst as SampledInstrument);
   instrumentCache.set(name, promise);
   return promise;
 };

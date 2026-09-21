@@ -21,37 +21,36 @@
 
   h2 {
     margin: 0 0 8px;
-    font-size: 14px;
+    font-size: 12.5px;
     color: #fff;
   }
 
   p {
     margin: 0;
-    font-size: 14px;
+    font-size: 12.5px;
     color: #aaa;
   }
 }
 
 .settings-bar {
   display: flex;
-  align-items: center;
+  /* Controls stretch to the bar's full height, edge to edge, with no borders. */
+  align-items: stretch;
   gap: 24px;
   background: #000000;
   flex-wrap: wrap;
-  height:5vh;
+  height: 5vh;
+  /* One text style for the whole bar: plain text inherits these and controls
+     opt in with `font: inherit`, so size, colour and family stay uniform. */
+  font-size: 14px;
+  font-weight: 400;
+  color: #eee;
 
   .playback-controls {
     display: flex;
     gap: 8px;
-    align-items: center;
+    align-items: stretch;
     margin-right: 8px;
-  }
-
-  .notes-count {
-    color: #aaa;
-    font-size: 14px;
-    padding: 0 8px;
-    white-space: nowrap;
   }
 
   .control-btn {
@@ -59,21 +58,17 @@
     align-items: center;
     justify-content: center;
     width: 36px;
-    height: 36px;
     padding: 0;
     background: #2a2a2a;
-    border: 1px solid #444;
+    border: none;
     border-radius: 0;
-    color: #fff;
+    color: inherit;
     cursor: pointer;
-    font-size: 14px;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
+    transition: background-color 0.15s ease;
     line-height: 1;
 
     &:hover:not(:disabled) {
       background: #4a9eff;
-      border-color: #4a9eff;
-      color: #fff;
     }
 
     &:disabled {
@@ -82,65 +77,133 @@
     }
 
     svg {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
     }
   }
 
   .setting {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 8px;
 
     label {
-      color: #aaa;
-      font-size: 14px;
+      align-self: center;
       white-space: nowrap;
     }
 
     input[type="number"] {
-      width: 70px;
+      width: 50px;
       padding: 4px 8px;
       background: #222;
-      color: #fff;
-      border: 1px solid #444;
+      border: none;
       border-radius: 0;
-      font-size: 14px;
+      font: inherit;
+      color: inherit;
 
       &:focus {
         outline: none;
-        border-color: #4a9eff;
+        /* Borderless, but focus still needs to be visible. */
+        box-shadow: inset 0 0 0 2px #4a9eff;
       }
     }
 
     input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
       width: 120px;
-      cursor: pointer;
-    }
-
-    select {
-      background: #222;
-      color: #fff;
-      border: 1px solid #444;
-      border-radius: 0;
-      padding: 4px 8px;
-      font-size: 14px;
+      height: 20px;
+      margin: 0;
+      align-self: center;
+      background: transparent;
       cursor: pointer;
 
       &:focus {
         outline: none;
-        border-color: #4a9eff;
+      }
+
+      /* --- WebKit / Chromium --- */
+      &::-webkit-slider-runnable-track {
+        height: 6px;
+        background: #4a9eff;
+        border-radius: 0;
+      }
+
+      &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 16px;
+        margin-top: -5px;
+        background: #4a9eff;
+        border: 2px solid #2c7dd0;
+        border-radius: 0;
+        cursor: pointer;
+      }
+
+      &:hover::-webkit-slider-thumb {
+        background: #3a7ecc;
+      }
+
+      &:focus-visible::-webkit-slider-thumb {
+        box-shadow: 0 0 0 2px #000, 0 0 0 4px #4a9eff;
+      }
+
+      /* --- Firefox --- */
+      &::-moz-range-track {
+        height: 6px;
+        background: #cacaca;
+        border: none;
+        border-radius: 0;
+      }
+
+      &::-moz-range-progress {
+        height: 6px;
+        background: #4a9eff;
+        border-radius: 0;
+      }
+
+      &::-moz-range-thumb {
+        width: 10px;
+        height: 12px;
+        background: #4a9eff;
+        border-radius: 0;
+        cursor: pointer;
+        border: none;
+      }
+
+      &:hover::-moz-range-thumb {
+        background: #3a7ecc;
+      }
+
+      &:focus-visible::-moz-range-thumb {
+        box-shadow: 0 0 0 2px #000, 0 0 0 4px #4a9eff;
+      }
+    }
+
+    select {
+      background: #222;
+      border: none;
+      border-radius: 0;
+      padding: 4px 8px;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+
+      &:focus {
+        outline: none;
+        /* Borderless, but focus still needs to be visible. */
+        box-shadow: inset 0 0 0 2px #4a9eff;
       }
 
       option {
-        color: #fff;
+        color: #eee;
         background: #222;
       }
     }
 
     span {
-      color: #fff;
-      font-size: 14px;
+      align-self: center;
       min-width: 45px;
     }
   }
@@ -149,7 +212,7 @@
 .file-menu {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   margin-right: 8px;
 
   .menu-trigger {
@@ -158,25 +221,22 @@
     gap: 4px;
     padding: 4px 12px;
     background: #2a2a2a;
-    border: 1px solid #444;
+    border: none;
     border-radius: 0;
-    color: #eee;
-    font-size: 13px;
+    font: inherit;
+    color: inherit;
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    transition: background 0.15s ease;
 
     .caret {
-      font-size: 10px;
-      color: #888;
+      font-size: 25px;
     }
 
     &:hover,
     &.open {
       background: #4a9eff;
-      border-color: #4a9eff;
-      color: #fff;
     }
   }
 
@@ -188,7 +248,7 @@
     min-width: 180px;
     z-index: 60;
     background: #1e1e1e;
-    border: 1px solid #3a3a3a;
+    border: none;
     border-radius: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
     padding: 4px;
@@ -199,16 +259,15 @@
       padding: 6px 12px;
       background: transparent;
       border: none;
-      color: #ddd;
+      font: inherit;
+      color: inherit;
       text-align: left;
-      font-size: 13px;
       line-height: 1;
       cursor: pointer;
       white-space: nowrap;
 
       &:hover:not(:disabled) {
         background: #4a9eff;
-        color: #fff;
       }
 
       &:disabled {
@@ -221,28 +280,28 @@
 
 .placement-toggle .segment {
   display: flex;
-  gap: 4px;
+  gap: 0px;
 
   button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 12px;
     background: #2a2a2a;
-    border: 1px solid #444;
+    border: none;
     border-radius: 0;
-    color: #aaa;
-    font-size: 12px;
+    font: inherit;
+    color: inherit;
     line-height: 1;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease;
 
     &:not(.active):hover {
       background: #3a3a3a;
-      color: #ccc;
     }
 
     &.active {
       background: #4a9eff;
-      border-color: #4a9eff;
-      color: #fff;
     }
   }
 }
@@ -291,7 +350,7 @@
   justify-content: center;
   background: #262626;
   color: #ccc;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
   border-right: 2px solid #444;
   user-select: none;
@@ -340,7 +399,7 @@
   }
 
   .note-name {
-    font-size: 14px;
+    font-size: 12.5px;
     font-weight: 600;
     color: #9aa0a6;
     opacity: 0.7;
@@ -453,7 +512,7 @@
   align-items: center;
 
   span {
-    font-size: 14px;
+    font-size: 12.5px;
     color: #aaa;
   }
 
@@ -468,7 +527,7 @@
     color: white;
     border: none;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12.5px;
     transition: background 0.2s;
 
     &:hover {

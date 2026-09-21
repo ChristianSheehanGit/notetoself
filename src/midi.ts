@@ -19,7 +19,14 @@ export interface MidiNoteData {
 }
 
 /** The number of tracks/rows this app exposes. */
-export const NUM_TRACKS = 3;
+export const NUM_TRACKS = 4;
+
+/** The percussion track and the instrument it plays. */
+export const PERCUSSION_TRACK = 3;
+export const PERCUSSION_INSTRUMENT = 'percussion';
+
+/** GM drum kits live on channel 10 (0-indexed 9), no matter the program. */
+const PERCUSSION_CHANNEL = 9;
 
 /** The fallback instrument used when a MIDI program has no direct mapping. */
 export const DEFAULT_INSTRUMENT = 'acoustic_grand_piano';
@@ -60,10 +67,13 @@ export function notesToMidi(notes: MidiNoteData[], bpm: number, name = 'notetose
 
   for (const trackId of trackIds) {
     const track = midi.addTrack();
-    track.name = `Track ${trackId + 1}`;
-    track.channel = Math.min(trackId, 15);
     const instrument = byTrack.get(trackId)![0]?.instrument ?? DEFAULT_INSTRUMENT;
-    track.instrument.number = INSTRUMENT_TO_PROGRAM[instrument] ?? 0;
+    const isPercussion = instrument === PERCUSSION_INSTRUMENT;
+    // Drums have to ride the GM percussion channel so other players read the
+    // note numbers as drum hits (kick, snare, hats, ...) rather than pitches.
+    track.name = isPercussion ? 'Percussion' : `Track ${trackId + 1}`;
+    track.channel = isPercussion ? PERCUSSION_CHANNEL : Math.min(trackId, 15);
+    track.instrument.number = isPercussion ? 0 : (INSTRUMENT_TO_PROGRAM[instrument] ?? 0);
 
     for (const note of byTrack.get(trackId)!) {
       track.addNote({
@@ -88,8 +98,9 @@ export interface MidiImportResult {
 /**
  * Parse a Standard MIDI File back into this app's note model.
  * Timing is quantized to the nearest 16th-note column, and each parsed track
- * is mapped onto one of our tracks. Unknown instruments fall back to
- * {@link DEFAULT_INSTRUMENT}.
+ * is mapped onto one of our tracks: the GM percussion channel (10) becomes the
+ * percussion track, other channels map onto the remaining tracks in order.
+ * Unknown instruments fall back to {@link DEFAULT_INSTRUMENT}.
  */
 export function midiToNotes(data: ArrayBuffer): MidiImportResult {
   const midi = new Midi(data);
@@ -103,12 +114,16 @@ export function midiToNotes(data: ArrayBuffer): MidiImportResult {
   const notes: MidiNoteData[] = [];
 
   midi.tracks.forEach((track, index) => {
-    // Skip the percussion channel (10): we have no drum kit mapping.
-    if (track.channel === 9) return;
-
+    // GM percussion (channel 10) lands on the percussion track, keeping its drum
+    // note numbers intact.
+    const isPercussion = track.channel === PERCUSSION_CHANNEL;
     const program = track.instrument?.number ?? 0;
-    const instrument = PROGRAM_TO_INSTRUMENT[program] ?? DEFAULT_INSTRUMENT;
-    const trackId = ((track.channel !== undefined ? track.channel : index) % NUM_TRACKS);
+    const instrument = isPercussion
+      ? PERCUSSION_INSTRUMENT
+      : (PROGRAM_TO_INSTRUMENT[program] ?? DEFAULT_INSTRUMENT);
+    const trackId = isPercussion
+      ? PERCUSSION_TRACK
+      : ((track.channel !== undefined ? track.channel : index) % NUM_TRACKS);
 
     for (const note of track.notes) {
       if (note.midi < 21 || note.midi > 108) continue; // our 88-key range

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlay, faStop, faReply, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faPlay, faStop, faBackwardStep, faTrash } from '@fortawesome/free-solid-svg-icons';
 import { playNotes, noteOn, noteOff, type ScheduledNote } from './audio';
 import { notesToMidi, midiToNotes } from './midi';
 
@@ -30,6 +30,10 @@ const TRACKS: Track[] = [
   { id: 0, name: 'Track 1', color: '#4a9eff', border: '#2c7dd0', instrument: 'acoustic_grand_piano' },
   { id: 1, name: 'Track 2', color: '#34d399', border: '#0f9d6c', instrument: 'brass_section' },
   { id: 2, name: 'Track 3', color: '#f472b6', border: '#d0468f', instrument: 'string_ensemble_1' },
+  // Percussion plays the General MIDI drum kit, keyed by the standard drum note
+  // numbers (35 = bass drum, 38 = snare, 42 = closed hi-hat, 46 = open hi-hat,
+  // 49 = crash, 51 = ride, 41/43/45/47/48/50 = toms).
+  { id: 3, name: 'Percussion', color: '#f59e0b', border: '#b45309', instrument: 'percussion' },
 ];
 
 const formatInstrumentName = (name: string) =>
@@ -50,8 +54,9 @@ const isBlackKey = (pitch: number) => {
   return n === 1 || n === 3 || n === 6 || n === 8 || n === 10;
 };
 
+// Black keys are named with flats (Db, Eb, Gb, Ab, Bb) rather than sharps.
 const getNoteName = (pitch: number) => {
-  const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const notes = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
   const octave = Math.floor(pitch / 12) - 1;
   return notes[pitch % 12] + octave;
 };
@@ -316,6 +321,14 @@ export default function PianoRoll() {
   const noteLeft = (note: Note): number => (note.x !== undefined ? note.x : getNoteRect(note).left);
   const noteWidth = (note: Note): number => (note.width !== undefined ? note.width : getNoteRect(note).width);
 
+  // Remember a note's size as the template for the next note placed. Both units
+  // are stored so the next note matches this one whichever mode it is drawn in.
+  const rememberNoteSize = (note: Note) => {
+    const width = noteWidth(note);
+    setLastNoteWidth(width);
+    setLastNoteLength(Math.max(1, Math.round(width / cellWidth)));
+  };
+
   // Does the pixel x fall within this note's horizontal bounds?
   const hitNoteAtX = (note: Note, x: number): boolean => {
     const r = getNoteRect(note);
@@ -359,6 +372,9 @@ export default function PianoRoll() {
     // Clicking an existing note on the active track → edit it in its own style.
     const clickedNote = notes.find(n => n.track === activeTrack && n.pitch === pos.pitch && hitNoteAtX(n, pos.x));
     if (clickedNote) {
+      // Even a click that never turns into a drag makes this note the template
+      // for the next one placed, so that note inherits this one's size.
+      rememberNoteSize(clickedNote);
       if (isFreeNote(clickedNote)) {
         // Right edge -> resize (px); otherwise move (px).
         if (pos.x >= noteLeft(clickedNote) + noteWidth(clickedNote) - RESIZE_SENSITIVITY) {
@@ -411,13 +427,13 @@ export default function PianoRoll() {
         const base = noteLeft(resizingNote);
         const newEnd = Math.max(base, pos.x);
         const newWidth = Math.max(MIN_NOTE_WIDTH, newEnd - base);
-        setLastNoteWidth(newWidth);
         growToColumn((base + newWidth) / cellWidth);
-        setNotes(prev => prev.map(n =>
-          n === resizingNote
-            ? { ...n, x: base, width: newWidth, pitch: pos.pitch }
-            : n
-        ));
+        const updated = { ...resizingNote, x: base, width: newWidth, pitch: pos.pitch };
+        rememberNoteSize(updated);
+        setNotes(prev => prev.map(n => (n === resizingNote ? updated : n)));
+        // Keep the drag snapshot pointing at the object now held in `notes`;
+        // the identity check above only ever matches the live object.
+        setResizingNote(updated);
         setCursorStyle('ew-resize');
         return;
       }
@@ -427,12 +443,12 @@ export default function PianoRoll() {
       const newEnd = Math.max(resizingNote.start, pos.start);
       const newLength = Math.max(1, newEnd - resizingNote.start + 1);
       growToColumn(newEnd);
-      setLastNoteLength(newLength);
-      setNotes(prev => prev.map(n =>
-        n === resizingNote
-          ? { ...n, length: newLength, pitch: pos.pitch }
-          : n
-      ));
+      const updated = { ...resizingNote, length: newLength, pitch: pos.pitch };
+      rememberNoteSize(updated);
+      setNotes(prev => prev.map(n => (n === resizingNote ? updated : n)));
+      // Keep the drag snapshot pointing at the object now held in `notes`;
+      // the identity check above only ever matches the live object.
+      setResizingNote(updated);
       setCursorStyle('ew-resize');
       return;
     }
@@ -444,8 +460,8 @@ export default function PianoRoll() {
         const width = noteWidth(movingNote.note);
         const newX = Math.max(0, pos.x - movingNote.offsetX);
         growToColumn((newX + width) / cellWidth);
-        setLastNoteWidth(width);
         const updated = { ...movingNote.note, x: newX, width, pitch: pos.pitch };
+        rememberNoteSize(updated);
         setNotes(prev => prev.map(n => n === movingNote.note ? updated : n));
         setMovingNote({ note: updated, offsetX: movingNote.offsetX });
         setCursorStyle('grabbing');
@@ -458,8 +474,8 @@ export default function PianoRoll() {
       const newPitch = Math.max(FIRST_KEY, Math.min(FIRST_KEY + NUM_KEYS - 1, pos.pitch));
       growToColumn(newStart + movingNote.note.length);
 
-      setLastNoteLength(movingNote.note.length);
       const updated = { ...movingNote.note, pitch: newPitch, start: newStart };
+      rememberNoteSize(updated);
       setNotes(prev => prev.map(n => n === movingNote.note ? updated : n));
 
       setMovingNote({ note: updated, offsetX: movingNote.offsetX });
@@ -527,6 +543,7 @@ export default function PianoRoll() {
         const length = Math.max(1, Math.round(width / cellWidth));
 
         setLastNoteWidth(width);
+        setLastNoteLength(length);
         growToColumn((x0 + width) / cellWidth);
 
         setNotes(prev => {
@@ -549,6 +566,7 @@ export default function PianoRoll() {
 
         // Remember the length of the note we just placed
         setLastNoteLength(length);
+        setLastNoteWidth(length * cellWidth);
         growToColumn(end);
 
         setNotes(prev => {
@@ -759,7 +777,7 @@ export default function PianoRoll() {
             onClick={startOver}
             title="Start Over"
           >
-            <FontAwesomeIcon icon={faReply} />
+            <FontAwesomeIcon icon={faBackwardStep} />
           </button>
           <button
             className="control-btn"
@@ -768,11 +786,10 @@ export default function PianoRoll() {
           >
             <FontAwesomeIcon icon={faTrash} />
           </button>
-          <span className="notes-count">Notes: {notes.length}</span>
         </div>
         <div className="setting track-select">
-          <label>Track</label>
           <select
+            aria-label="Track"
             value={activeTrack}
             onChange={(e) => setActiveTrack(Number(e.target.value))}
             style={{
@@ -787,9 +804,10 @@ export default function PianoRoll() {
           </select>
         </div>
         <div className="setting">
-          <label>BPM</label>
           <input 
             type="number" 
+            aria-label="Tempo (BPM)"
+            title="Tempo (BPM)"
             value={bpm} 
             onChange={(e) => setBpm(Number(e.target.value))}
             min="1"
@@ -797,7 +815,6 @@ export default function PianoRoll() {
           />
         </div>
         <div className="setting placement-toggle">
-          <label>Placement</label>
           <div className="segment">
             <button
               type="button"
