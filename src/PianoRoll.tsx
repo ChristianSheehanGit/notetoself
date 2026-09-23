@@ -69,6 +69,8 @@ export default function PianoRoll() {
   const [activeTrack, setActiveTrack] = useState<number>(0);
   const [placementMode, setPlacementMode] = useState<'grid' | 'free'>('grid');
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [isTrackMenuOpen, setIsTrackMenuOpen] = useState(false);
   const activeTrackInfo = TRACKS.find(t => t.id === activeTrack) ?? TRACKS[0];
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ pitch: number; start: number } | null>(null);
@@ -85,6 +87,7 @@ export default function PianoRoll() {
   const pianoRollRef = useRef<HTMLDivElement>(null);
   const midiFileRef = useRef<HTMLInputElement>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
+  const trackMenuRef = useRef<HTMLDivElement>(null);
   const playbackRef = useRef<{ stop: () => void } | null>(null);
   const heldPitchRef = useRef<number | null>(null);
   const [pressedKeys, setPressedKeys] = useState<Set<number>>(new Set());
@@ -166,6 +169,18 @@ export default function PianoRoll() {
     return () => document.removeEventListener('mousedown', handle);
   }, [isFileMenuOpen]);
 
+  // Close the Track dropdown when clicking anywhere outside of it.
+  useEffect(() => {
+    if (!isTrackMenuOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (trackMenuRef.current && !trackMenuRef.current.contains(e.target as Node)) {
+        setIsTrackMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [isTrackMenuOpen]);
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
   };
@@ -213,6 +228,18 @@ export default function PianoRoll() {
       setPlayhead(null);
     }
     setMarkerPosition(0);
+  };
+
+  // Clear every note after the user confirms the "Clear All" dialog.
+  const confirmClear = () => {
+    if (playbackRef.current) {
+      playbackRef.current.stop();
+      playbackRef.current = null;
+      setIsPlaying(false);
+      setPlayhead(null);
+    }
+    setNotes([]);
+    setConfirmingClear(false);
   };
 
   // Export the current notes (grid and free alike) as a downloadable MIDI file.
@@ -781,27 +808,42 @@ export default function PianoRoll() {
           </button>
           <button
             className="control-btn"
-            onClick={() => setNotes([])}
+            onClick={() => setConfirmingClear(true)}
+            disabled={notes.length === 0}
             title="Clear All"
           >
             <FontAwesomeIcon icon={faTrash} />
           </button>
         </div>
-        <div className="setting track-select">
-          <select
-            aria-label="Track"
-            value={activeTrack}
-            onChange={(e) => setActiveTrack(Number(e.target.value))}
-            style={{
-              color: (TRACKS.find(t => t.id === activeTrack) ?? TRACKS[0]).color,
-            }}
+        <div className="file-menu track-select" ref={trackMenuRef}>
+          <button
+            type="button"
+            className={`menu-trigger ${isTrackMenuOpen ? 'open' : ''}`}
+            onClick={() => setIsTrackMenuOpen((open) => !open)}
+            title="Track"
+            style={{ color: activeTrackInfo.color }}
           >
-            {TRACKS.map(t => (
-              <option key={t.id} value={t.id}>
-                {formatInstrumentName(t.instrument)}
-              </option>
-            ))}
-          </select>
+            {formatInstrumentName(activeTrackInfo.instrument)}
+            <span className="caret">▾</span>
+          </button>
+          {isTrackMenuOpen && (
+            <div className="menu-dropdown">
+              {TRACKS.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`menu-item ${t.id === activeTrack ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTrack(t.id);
+                    setIsTrackMenuOpen(false);
+                  }}
+                >
+                  {t.id === activeTrack ? '✓ ' : ''}
+                  {formatInstrumentName(t.instrument)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="setting">
           <input 
@@ -835,7 +877,7 @@ export default function PianoRoll() {
           </div>
         </div>
         <div className="setting">
-          <label>Grid Width:</label>
+          <label>Cell Width:</label>
           <input 
             type="range" 
             min="12" 
@@ -846,7 +888,7 @@ export default function PianoRoll() {
           <span>{cellWidth}px</span>
         </div>
         <div className="setting">
-          <label>Grid Height:</label>
+          <label>Cell Height:</label>
           <input 
             type="range" 
             min="12" 
@@ -906,6 +948,38 @@ export default function PianoRoll() {
           </div>
         </div>
       </div>
+      {confirmingClear && (
+        <div
+          className="confirm-modal-overlay"
+          onClick={() => setConfirmingClear(false)}
+        >
+          <div
+            className="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-clear-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="confirm-clear-title">Clear all notes?</h3>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                className="confirm-modal-cancel"
+                onClick={() => setConfirmingClear(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-modal-danger"
+                onClick={confirmClear}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
